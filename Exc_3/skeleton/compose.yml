@@ -1,0 +1,22 @@
+services:
+  postgres: # also will have this as a network alias
+    container_name: SDBPostgress
+    image: postgres:18
+    env_file: debug.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - SDB3EX3:/var/lib/postgresql/18/docker
+    stdin_open: true
+    tty: true
+
+  orderservice:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file: debug.env
+    depends_on:
+      - postgres
+
+volumes:
+  SDB3EX3:
