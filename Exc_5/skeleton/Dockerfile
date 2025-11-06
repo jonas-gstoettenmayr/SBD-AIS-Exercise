@@ -1,7 +1,7 @@
 FROM golang:1.25 AS builder
 WORKDIR /app
 COPY . .
-RUN sh /app/scripts/build-application.sh
+RUN bash ./scripts/build-application.sh
 
 FROM alpine AS run
 WORKDIR /

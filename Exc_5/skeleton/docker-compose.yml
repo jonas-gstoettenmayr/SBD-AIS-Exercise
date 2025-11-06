@@ -5,47 +5,92 @@ networks:
     name: intercom
 
 volumes:
-  order_pg_vol:
+  SDB3EX3:
 
 services:
   traefik:
     image: "traefik:v3.5.2"
-    # todo add traefik config
-    # todo only expose network web
+    restart: unless-stopped
     networks:
       - web
+    ports:
+      - "80:80"
+      - "8080:8080"
+    # todo add traefik config
+    # todo only expose network web
+    security_opt:
+      - no-new-privileges:true
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=web"
+      - "--entrypoints.web.address=:80"
+    volumes: # read only for docker container sockets
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+  # whoami:
+  #   image: traefik/whoami
+  #   networks:
+  #     - web
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.orderservice.rule=Host(`whoami.localhost`)"
 
 
   orderservice:
     container_name: orderservice
     build: .
+    restart: unless-stopped
     command: [ "/app/ordersystem" ]
     # todo add traefik labels
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.orderservice.rule=Host(`orders.localhost`)"
+      - "traefik.http.routers.orderservice.entrypoints=web"
     environment:
       - POSTGRES_DB=order
       - POSTGRES_USER=docker
       - POSTGRES_PASSWORD=docker
       - POSTGRES_TCP_PORT=5432
       - DB_HOST=order-postgres
+    ports:
+      - "3000:3000"
     networks:
       - intercom
       - web
+    depends_on:
+      order-postgres:
+        condition: service_healthy
 
   sws:
     image: joseluisq/static-web-server:latest
-    # todo add frontend folder as volume
     # todo setup environment variables to expose port 80 and serve the frontend folder
+    environment:
+      - SERVER_PORT=80
+      - SERVER_ROOT=app/frontend
     # todo add traefik labels
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sws.rule=Host(`localhost`)"
+      - "traefik.http.routers.sws.entrypoints=web"
+    ports:
+      - 100:80
+    # todo add frontend folder as volume
+    volumes: 
+      - type: bind
+        source: ./frontend
+        target: /app/frontend
     networks:
       - web
 
   order-postgres:
-    image: postgres:latest
+    image: postgres:18
     restart: always
     networks:
       - intercom
     volumes:
-      - order_pg_vol:/var/lib/postgresql/18/docker
+      - SDB3EX3:/var/lib/postgresql
     ports:
       - "5432:5432"
     environment:
@@ -53,3 +98,9 @@ services:
       - POSTGRES_USER=docker
       - POSTGRES_PASSWORD=docker
       - POSTGRES_TCP_PORT=5432
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d order -U docker" ]
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 2s
