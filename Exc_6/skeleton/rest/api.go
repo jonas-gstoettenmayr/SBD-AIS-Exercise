@@ -9,6 +9,8 @@ import (
 	"ordersystem/httptools"
 	"ordersystem/model"
 	"ordersystem/repository"
+	"ordersystem/storage"
+	"strings"
 
 	"github.com/go-chi/render"
 	"github.com/minio/minio-go/v7"
@@ -110,16 +112,31 @@ func GetReceiptFile(db *repository.DatabaseHandler, s3 *minio.Client) http.Handl
 			return
 		}
 		// read from s3
-		// todo
 		// Get the file from s3 using s3.GetObject(), the bucket name is defined in storage.OrdersBucket
 		// dbOrder.Filename() can be used to get the filename.
 		// handle any error!
-
+		fileName := order.GetFilename()
+		bucketName := storage.OrdersBucket
+		mdfile, err := s3.GetObject(r.Context(), bucketName, fileName, minio.GetObjectOptions{})
+		if err != nil {
+			slog.Error("Unable to load file", slog.String("error", err.Error()))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, "Unable to load file")
+			return
+		}
 		// serve file
-		// todo
 		// set the correct header on w http.ResponseWriter ("Content-Type" and "Content-Disposition")
 		// Use the correct filename for "Content-Disposition" (https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Disposition)
 		// io.Copy can be used to write the result of s3.GetObject() to w http.ResponseWriter
+		w.Header().Set("Content-Disposition", "attachment; filename="+fileName)
+		w.Header().Set("Content-Type", "text/markdown")
+		_, err = io.Copy(w, mdfile)
+		if err != nil {
+			slog.Error("Unable to load file", slog.String("error", err.Error()))
+			render.Status(r, http.StatusInternalServerError)
+			render.JSON(w, r, "Unable to load file")
+			return
+		}
 	}
 }
 
@@ -160,13 +177,22 @@ func PostOrder(db *repository.DatabaseHandler, s3 *minio.Client) http.HandlerFun
 			return
 		}
 		// store to s3
-		// todo
 		// call dbOrder.ToMarkdown() --> use strings.NewReader to create a reader
 		// Put the file into s3 using s3.PutObject(), the bucket name is defined in storage.OrdersBucket
 		// dbOrder.Filename() can be used to get the filename.
 		// Size of the file is determined by the string.
 		// Use the following PutObjectOptions: minio.PutObjectOptions{ContentType: "text/markdown"}
 		// Handle errors!
+		mdString := dbOrder.ToMarkdown()
+
+		bucket := storage.OrdersBucket
+		filename:= dbOrder.GetFilename()
+
+		reader := strings.NewReader(mdString)
+
+		s3.PutObject(r.Context(), bucket, filename, reader, -1, minio.PutObjectOptions{ContentType: "text/markdown"})
+
+
 		render.Status(r, http.StatusOK)
 		render.JSON(w, r, "ok")
 	}

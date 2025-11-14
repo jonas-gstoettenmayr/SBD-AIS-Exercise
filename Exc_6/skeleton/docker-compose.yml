@@ -5,8 +5,8 @@ networks:
     name: intercom
 
 volumes:
-  order_pg_vol:
-  # todo
+  SDB3EX3:
+  MinIOVol:
 
 services:
   traefik:
@@ -41,6 +41,7 @@ services:
       - POSTGRES_USER=docker
       - POSTGRES_PASSWORD=docker
       - PGPORT=5555
+      - POSTGRES_TCP_PORT=5555
       - DB_HOST=order-postgres
       - S3_ACCESS_KEY_ID=root
       - S3_SECRET_ACCESS_KEY=verysecret
@@ -48,6 +49,9 @@ services:
     networks:
       - intercom
       - web
+    depends_on:
+      order-postgres:
+        condition: service_healthy    
 
   sws:
     image: joseluisq/static-web-server:latest
@@ -67,17 +71,20 @@ services:
   order-postgres:
     image: postgres:18
     volumes:
-      - order_pg_vol:/var/lib/postgresql
+      - SDB3EX3:/var/lib/postgresql
     restart: always
     networks:
       - intercom
     ports:
       - "5555:5555"
-    environment:
-      - POSTGRES_DB=order
-      - POSTGRES_USER=docker
-      - POSTGRES_PASSWORD=docker
-      - PGPORT=5555
+    env_file:
+      - debug.env
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d order -U docker" ]
+      interval: 1s
+      timeout: 1s
+      retries: 5
+      start_period: 2s
 
   order-minio:
     # todo use minio/minio:latest as image
@@ -86,3 +93,14 @@ services:
     # use the following commands: "server", "--address", ":8500", "/data"
     # map the data volume
     # set environment variables MINIO_ROOT_USER and MINIO_ROOT_PASSWORD
+    image: minio/minio:latest
+    ports:
+      - "8500:8500"
+    environment:
+      - MINIO_ROOT_USER=root
+      - MINIO_ROOT_PASSWORD=verysecret
+    command: ["server", "--address", ":8500", "/data"]
+    volumes:
+      - MinIOVol:/data
+    networks:
+      - intercom
