@@ -63,9 +63,8 @@ func (mr MapReduce) Run(input []string) map[string]int {
 	var wg1 sync.WaitGroup
 	var wg2 sync.WaitGroup
 	var wg3 sync.WaitGroup
-	lineWords := make(chan []KeyValue, num_goroutines)
-	wordMaps := make(chan map[string][]int, num_goroutines)
-	keyValues := make(chan []KeyValue, num_goroutines)
+	lineWords := make(chan []KeyValue)
+	wordMaps := make(chan map[string][]int)
 
 	// start in reverse order for maximum efficiency
 	// i.e. starting to listen before we send
@@ -75,14 +74,16 @@ func (mr MapReduce) Run(input []string) map[string]int {
 	// not most beautifull way to code this, but is more parralizable this way
 
 	// 3. get lists of key values in format [(john, 6)], so with the sum
-	for range num_goroutines {
+	results := make([][]KeyValue, num_goroutines) // writing in specific index does not cause conflict
+	for i:= range num_goroutines {
 		wg3.Go( func() {
+			i := i
 			m := <-wordMaps
-			toSend := []KeyValue{}
+			toSend := make([]KeyValue, 0, len(m) ) // start point and capacity, append starts by filling form 0 up
 			for key, value := range m{
 				toSend = append(toSend, mr.wordCountReducer(key, value))
 			}
-			keyValues <- toSend
+			results[i] = toSend
 		})
 	}
 	// 2. shuffle the output of count mapper to make (john, [1,1,1]) formats
@@ -104,17 +105,13 @@ func (mr MapReduce) Run(input []string) map[string]int {
 	wg2.Wait()
 	close(wordMaps) // same here
 	wg3.Wait()
-	close(keyValues) // allows for synchronous merging in main
+
 
 	// convert my lists of unique values into a truly unique map
 	result := map[string]int{}
-	for pairs := range keyValues {
+	for _, pairs := range results {
 		for _, pair := range pairs {
-			if _, exists := result[pair.Key]; !exists{
-				result[pair.Key] = pair.Value
-			} else {
-				result[pair.Key] += pair.Value
-			}
+			result[pair.Key] += pair.Value
 		}
 	}
 	return result
